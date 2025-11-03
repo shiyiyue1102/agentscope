@@ -33,10 +33,6 @@ async def main() -> None:
 
 # Target
 Your target is to finish the given task with careful planning.
-
-# Note
-- You can equip yourself with plan related tools to help you plan and execute the given task.
-- The resouces from search engines are not always correct, you should collect information from multiple sources and give the final answer after careful consideration.
 """,  # noqa
         model=DashScopeChatModel(
             model_name="qwen3-max-preview",
@@ -45,9 +41,15 @@ Your target is to finish the given task with careful planning.
         formatter=DashScopeChatFormatter(),
         toolkit=toolkit,
         enable_meta_tool=True,
-        plan_notebook=PlanNotebook(),
+        auto_plan=True,
+        max_iters=50,
+        compress_tool_history=True,
     )
     user = UserAgent(name="user")
+    agent.model = DashScopeChatModel(
+            model_name="qwen3-max-preview",
+            api_key=os.environ["DASHSCOPE_API_KEY"],
+        )
 
     msg = Msg(
         "user",

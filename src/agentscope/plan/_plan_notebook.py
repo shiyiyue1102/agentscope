@@ -44,7 +44,7 @@ class DefaultPlanToHint:
         "prioritize the completion of user's query first, and then return "
         "to the plan afterward.\n"
         "- If the user no longer wants to perform the current plan, confirm "
-        "with the user and call the 'finish_plan' function.\n"
+        "with the user and call the 'finish_plan' function. \n"
     )
 
     when_a_subtask_in_progress: str = (
@@ -91,7 +91,10 @@ class DefaultPlanToHint:
         "```\n"
         "All the subtasks are done. Now your options are:\n"
         "- Finish the plan by calling 'finish_plan' with the specific "
-        "outcome, and summarize the whole process and outcome to the user.\n"
+        "outcome,you need to provide a summary of the overall task. "
+        "If the user requires a clear response—for example, "
+        "outputting a report—you must deliver the completed "
+        "report upon finishing the plan. and summarize the whole process and outcome to the user.\n"
         "- Revise the plan by calling 'revise_current_plan' if necessary.\n"
         "- If the user asks you to do something unrelated to the plan, "
         "prioritize the completion of user's query first, and then return to "
@@ -488,6 +491,7 @@ class PlanNotebook(StateModule):
                 if idx < subtask_idx and subtask.state not in [
                     "done",
                     "deprecated",
+                    "abandoned",
                 ]:
                     return ToolResponse(
                         content=[

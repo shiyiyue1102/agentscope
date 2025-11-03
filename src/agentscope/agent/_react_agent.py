@@ -97,10 +97,7 @@ class ReActAgent(ReActAgentBase):
         enable_rewrite_query: bool = True,
         plan_notebook: PlanNotebook | None = None,
         print_hint_msg: bool = False,
-        compress_tool_history: bool = True,
         max_iters: int = 10,
-
-        auto_plan: bool = False,
     ) -> None:
         """Initialize the ReAct agent
 
@@ -198,13 +195,6 @@ class ReActAgent(ReActAgentBase):
         self.toolkit.register_tool_function(
             getattr(self, self.finish_function_name),
         )
-
-        self.compress_tool_history = compress_tool_history  # 保存参数
-        self.auto_plan = auto_plan # 是否自动计划
-
-        if auto_plan and plan_notebook is None:
-            plan_notebook = PlanNotebook()
-
         if self._agent_control:
             # Adding two tool functions into the toolkit to allow self-control
             self.toolkit.register_tool_function(
@@ -362,11 +352,6 @@ class ReActAgent(ReActAgentBase):
         self,
     ) -> Msg:
         """Perform the reasoning process."""
-
-        # Compress tool history if enabled
-        if self.compress_tool_history:
-            await self._compress_tool_calls_history_with_model()
-
         if self.plan_notebook:
             # Insert the reasoning hint from the plan notebook
             hint_msg = await self.plan_notebook.get_current_hint()
@@ -450,113 +435,6 @@ class ReActAgent(ReActAgentBase):
                     await self.memory.add(msg_res)
                     await self.print(msg_res, True)
         return msg
-
-    tool_compress_prompt_start: str = """Please intelligently compress and summarize the following tool invocation history
-"""
-    tool_compress_prompt_end: str = """Above is a history of tool invocations. 
-Please intelligently compress and summarize the following tool invocation history:
-    Summarize the tool responses while preserving key invocation details, including the tool name, its purpose, and its output.
-    For repeated calls to the same tool, consolidate the different parameters and results, highlighting essential variations and outcomes.
-    """
-
-    async def _compress_tool_calls_history_with_model(self) -> None:
-        """使用模型智能压缩最
-        近两次user消息之间的工具调用"""
-        memory_msgs = await self.memory.get_memory()
-
-        if len(memory_msgs) <= 2:
-            return
-
-        # 找到最近的两次user消息的位置
-        user_msg_indices = []
-        for i, msg in enumerate(memory_msgs):
-            if msg.role == "user":
-                user_msg_indices.append(i)
-        # 如果少于两次user消息，不需要压缩
-        if len(user_msg_indices) < 2:
-            return
-
-        # 获取最近两次user消息之间的消息
-        last_user_index = user_msg_indices[-1]
-        second_last_user_index = user_msg_indices[-2]
-
-        # 计算两次user消息之间的消息数量
-        messages_between = memory_msgs[second_last_user_index + 1:last_user_index]
-
-        # 如果中间的消息数量不超过5条，不需要压缩
-        if len(messages_between) <= 5:
-            return
-
-        tool_messages = []
-        not_tool_messages = []
-        for msg in messages_between:
-            # msg.content是一个列表，需要遍历每个block
-            is_tool_message = False
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict) and 'type' in block:
-                        if block['type'] in ['tool_use', 'tool_result']:
-                            is_tool_message = True
-                            break
-
-            if is_tool_message:
-                tool_messages.append(msg)
-            else:
-                not_tool_messages.append(msg)
-
-        if tool_messages is  None or len(tool_messages) < 1:
-            return
-
-        try:
-            # 直接构建消息列表传给模型
-            compression_msgs = [
-                Msg(
-                    "system",
-                    role="system",
-                    content=self.tool_compress_prompt_start,
-                ),
-                *tool_messages,
-                Msg(
-                    "system",
-                    role="user",
-                    content=self.tool_compress_prompt_end,
-                ),
-            ]
-
-            # 使用模型进行压缩
-            compressed_result0 = await self.model(
-                await self.formatter.format(compression_msgs)
-            )
-
-            if isinstance(compressed_result0, AsyncGenerator):
-                async for chunk in compressed_result0:
-                    compressed_result = chunk.content
-            else:
-                compressed_result = compressed_result0.content
-
-            # 创建压缩后的消息
-            compressed_msg = Msg(
-                "system",
-                role="assistant",
-                content=f"<compressed_history>{compressed_result}</compressed_history> "
-                        f"<hint> You can use this information as historical context for future reference in carrying out your tasks,"
-                        f" but you must not return the content directly.</hint>"
-            )
-
-            # 构建新的消息列表
-            new_messages = (
-                    memory_msgs[:second_last_user_index + 1] +  # 第一个user消息及之前的所有内容
-                    [compressed_msg,not_tool_messages] +  # 压缩后的总结
-                    memory_msgs[last_user_index:]  # 当前user消息及之后的内容
-            )
-
-            # 更新memory
-            await self.memory.clear()
-            for msg in new_messages:
-                await self.memory.add(msg)
-
-        except Exception as e:
-            logger.warning("tool msg compress fail：%s", str(e))
 
     async def _acting(self, tool_call: ToolUseBlock) -> Msg | None:
         """Perform the acting process.

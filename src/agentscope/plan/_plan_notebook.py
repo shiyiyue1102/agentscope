@@ -44,7 +44,7 @@ class DefaultPlanToHint:
         "prioritize the completion of user's query first, and then return "
         "to the plan afterward.\n"
         "- If the user no longer wants to perform the current plan, confirm "
-        "with the user and call the 'finish_plan' function. \n"
+        "with the user and call the 'finish_plan' function.\n"
     )
 
     when_a_subtask_in_progress: str = (
